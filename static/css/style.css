@@ -1,0 +1,942 @@
+/* ==========================================================================
+   GGPoker Spin & Gold Mobile Leaderboard HUD
+   Mobile-First High-Contrast Dark Poker Theme (375px-430px Optimized)
+   ========================================================================== */
+
+:root {
+  --bg-base: #0d0e11;
+  --bg-card: #141619;
+  --bg-card-elevated: #1a1d22;
+  --bg-input: #101215;
+  --bg-row-hover: #1f232a;
+  
+  --border-subtle: #242830;
+  --border-medium: #303540;
+  --border-active: #e5a93c;
+  
+  --text-primary: #f0f3f6;
+  --text-secondary: #9aa0a6;
+  --text-muted: #5f6368;
+  
+  --gold: #e5a93c;
+  --gold-glow: rgba(229, 169, 60, 0.28);
+  --gold-gradient: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
+  --silver-gradient: linear-gradient(135deg, #f0f3f6 0%, #94a3b8 100%);
+  --bronze-gradient: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+  --top10-gradient: linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%);
+  
+  --green: #00e676;
+  --green-glow: rgba(0, 230, 118, 0.25);
+  --danger: #ff5252;
+  --danger-glow: rgba(255, 82, 82, 0.35);
+  --warning: #ffb74d;
+  --hero-accent: #3b82f6;
+  --hero-highlight-bg: rgba(229, 169, 60, 0.12);
+  --hero-highlight-border: #e5a93c;
+  
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+  
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Box sizing and zero horizontal overflow rules */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-x: hidden;
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100%;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-top: max(8px, var(--safe-top));
+  padding-bottom: max(16px, var(--safe-bottom));
+  padding-left: max(8px, var(--safe-left));
+  padding-right: max(8px, var(--safe-right));
+}
+
+/* App Container (constrained for optimal mobile viewports 375px-430px) */
+.app-container {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ==========================================================================
+   Header & Live Bar
+   ========================================================================== */
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--gold-gradient);
+  color: #0d0e11;
+  font-weight: 900;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px var(--gold-glow);
+}
+
+.brand-text h1 {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.brand-text p {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Live Pulse Dot */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s infinite ease-in-out;
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.pulse-dot.syncing {
+  background-color: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+
+.pulse-dot.error {
+  background-color: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+  animation: none;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+/* Countdown Pill */
+.countdown-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--border-medium);
+  padding: 5px 9px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.countdown-pill.urgent-warning {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.countdown-pill.urgent-critical {
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 8px var(--danger-glow);
+  animation: pulse 1.2s infinite ease-in-out;
+}
+
+/* Header Buttons */
+.btn-icon {
+  background: var(--bg-card-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:active {
+  background: var(--border-medium);
+  color: var(--text-primary);
+  transform: scale(0.95);
+}
+
+/* ==========================================================================
+   Stake Selector Chips Bar
+   ========================================================================== */
+.stake-bar-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.stake-chips-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none; /* Firefox */
+  -webkit-overflow-scrolling: touch;
+}
+
+.stake-chips-scroll::-webkit-scrollbar {
+  display: none; /* Safari & Chrome */
+}
+
+.stake-chip {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.stake-chip:active {
+  transform: scale(0.96);
+}
+
+.stake-chip.active {
+  background-color: var(--bg-card-elevated);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 2px 10px var(--gold-glow);
+}
+
+/* ==========================================================================
+   Hero Controls Bar
+   ========================================================================== */
+.hero-controls-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+}
+
+.hero-input-group {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.hero-input-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.hero-input {
+  width: 100%;
+  height: 44px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 32px 0 30px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.hero-input:focus {
+  border-color: var(--hero-accent);
+}
+
+.hero-clear-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  display: none;
+}
+
+.hero-clear-btn.visible {
+  display: block;
+}
+
+.refresh-select {
+  height: 44px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.btn-refresh {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, background-color 0.2s;
+}
+
+.btn-refresh:active {
+  transform: rotate(45deg) scale(0.95);
+  background-color: var(--border-medium);
+}
+
+.btn-refresh.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   Hero Spotlight Card
+   ========================================================================== */
+.hero-spotlight-card {
+  background: linear-gradient(180deg, var(--bg-card-elevated) 0%, var(--bg-card) 100%);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+
+.hero-spotlight-card.ranked {
+  border-color: var(--gold);
+}
+
+.hero-spotlight-card.danger {
+  border-color: var(--danger);
+}
+
+.spotlight-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spotlight-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Large Rank Medal Badge */
+.large-rank-badge {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 900;
+  color: #0d0e11;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  background: var(--border-medium);
+}
+
+.large-rank-badge.rank-1 {
+  background: var(--gold-gradient);
+  color: #1a1300;
+  box-shadow: 0 0 16px var(--gold-glow);
+}
+
+.large-rank-badge.rank-2 {
+  background: var(--silver-gradient);
+  color: #121824;
+}
+
+.large-rank-badge.rank-3 {
+  background: var(--bronze-gradient);
+  color: #2b1300;
+}
+
+.large-rank-badge.rank-top10 {
+  background: var(--top10-gradient);
+  color: #ffffff;
+}
+
+.large-rank-badge.rank-unranked {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.spotlight-info {
+  min-width: 0;
+}
+
+.spotlight-nick {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotlight-stake-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.spotlight-prize-badge {
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.prize-pill {
+  display: inline-block;
+  background-color: rgba(0, 230, 118, 0.12);
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.points-display {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  margin-top: 2px;
+}
+
+/* Spotlight Telemetry Grid */
+.spotlight-telemetry-grid {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.telemetry-cell {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+
+.telemetry-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.telemetry-value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.telemetry-value.gold {
+  color: var(--gold);
+}
+
+.telemetry-value.green {
+  color: var(--green);
+}
+
+.telemetry-value.danger {
+  color: var(--danger);
+}
+
+/* Danger Alert Banner */
+.danger-alert-banner {
+  margin-top: 10px;
+  background: rgba(255, 82, 82, 0.15);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff8585;
+}
+
+.danger-alert-banner.warning-banner {
+  background: rgba(255, 183, 77, 0.15);
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.danger-alert-banner.hidden {
+  display: none;
+}
+
+/* Empty Hero Notice */
+.hero-empty-notice {
+  text-align: center;
+  padding: 10px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Leaderboard Section & Table
+   ========================================================================== */
+.table-section {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.table-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.table-header-title h2 {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.prize-pool-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+  background: rgba(229, 169, 60, 0.1);
+  border: 1px solid rgba(229, 169, 60, 0.3);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* Scrollbar styling */
+.leaderboard-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.leaderboard-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.leaderboard-list::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-full);
+}
+
+/* Leaderboard Row */
+.player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 6px 10px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.player-row:hover {
+  background-color: var(--bg-row-hover);
+}
+
+.player-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Mini Rank Badge */
+.rank-badge {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0d0e11;
+  background: var(--border-medium);
+}
+
+.rank-badge.rank-1 {
+  background: var(--gold-gradient);
+  color: #1a1300;
+  box-shadow: 0 0 8px var(--gold-glow);
+}
+
+.rank-badge.rank-2 {
+  background: var(--silver-gradient);
+  color: #121824;
+}
+
+.rank-badge.rank-3 {
+  background: var(--bronze-gradient);
+  color: #2b1300;
+}
+
+.rank-badge.rank-top10 {
+  background: var(--top10-gradient);
+  color: #ffffff;
+}
+
+.rank-badge.rank-other {
+  background: #252830;
+  color: var(--text-secondary);
+}
+
+.player-name-wrapper {
+  min-width: 0;
+}
+
+.player-nick {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.player-points {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.player-right {
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.player-prize {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.player-delta {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Hero Row Highlight */
+.player-row.hero-row {
+  background: var(--hero-highlight-bg);
+  border: 1px solid var(--hero-highlight-border);
+  box-shadow: 0 0 10px var(--gold-glow);
+  position: relative;
+}
+
+.player-row.hero-row .player-nick {
+  color: var(--gold);
+}
+
+/* ==========================================================================
+   PIN Lock Screen Overlay
+   ========================================================================== */
+.pin-lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: rgba(13, 14, 17, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.pin-lock-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.pin-modal {
+  width: 100%;
+  max-width: 340px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.pin-modal-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--gold-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  box-shadow: 0 0 18px var(--gold-glow);
+}
+
+.pin-modal h2 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.pin-modal p {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* PIN Dots / Display */
+.pin-display-wrapper {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0;
+}
+
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-medium);
+  background-color: transparent;
+  transition: all 0.2s;
+}
+
+.pin-dot.filled {
+  background-color: var(--gold);
+  border-color: var(--gold);
+  box-shadow: 0 0 8px var(--gold-glow);
+}
+
+/* Keypad Grid */
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+
+.pin-btn {
+  height: 54px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+
+.pin-btn:active {
+  background-color: var(--border-medium);
+  transform: scale(0.95);
+}
+
+.pin-btn.action-btn {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.pin-btn.enter-btn {
+  background-color: rgba(229, 169, 60, 0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.pin-error-msg {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger);
+  min-height: 18px;
+}
+
+/* Shake Animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+.shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+/* Pull to Refresh Indicator */
+.pull-refresh-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.2s;
+  pointer-events: none;
+}
+
+.pull-refresh-indicator.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Toast Notification */
+.toast-notice {
+  position: fixed;
+  bottom: calc(20px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.toast-notice.visible {
+  opacity: 1;
+}

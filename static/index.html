@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Mobile-first viewport optimized for 375px-430px viewports with zero horizontal overflow -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  
+  <title>GG Leaderboard Mobile HUD</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="Real-time Mobile HUD for GGPoker Spin & Gold Leaderboards">
+  <meta name="theme-color" content="#141619">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="GG HUD">
+  <meta name="mobile-web-app-capable" content="yes">
+  
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png">
+  
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Main Mobile Container -->
+  <main class="app-container">
+    
+    <!-- Pull to Refresh Visual Indicator -->
+    <div id="pull-indicator" class="pull-refresh-indicator" aria-hidden="true">↓ Pull down to refresh</div>
+
+    <!-- Header with Title, Live Pulse Dot, Countdown Pill, Logout -->
+    <header class="header-bar">
+      <div class="brand-section">
+        <div class="brand-logo" aria-hidden="true">GG</div>
+        <div class="brand-text">
+          <h1>GG HUD</h1>
+          <p>Spin &amp; Gold</p>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <!-- Live pulse dot -->
+        <span id="pulse-dot" class="pulse-dot" title="Live Connection Active" aria-label="Live connection status"></span>
+        <!-- Countdown Pill ("⏳ 07ч 12м 45с") -->
+        <div id="countdown-pill" class="countdown-pill" title="Time remaining until 08:00 UTC daily reset">
+          <span class="countdown-icon" aria-hidden="true">⏳</span>
+          <span id="countdown-timer-text">--ч --м --с</span>
+        </div>
+        <!-- Logout / Lock HUD button -->
+        <button id="btn-logout" class="btn-icon" title="Lock HUD / Logout" aria-label="Lock HUD">🔒</button>
+      </div>
+    </header>
+
+    <!-- Stake Selector Bar: Chips from $0.25 to $200 -->
+    <nav class="stake-bar-wrapper" aria-label="Stake Selector">
+      <div id="stake-chips-scroll" class="stake-chips-scroll">
+        <button class="stake-chip active" data-stake="$0.25">$0.25</button>
+        <button class="stake-chip" data-stake="$1">$1</button>
+        <button class="stake-chip" data-stake="$3">$3</button>
+        <button class="stake-chip" data-stake="$5">$5</button>
+        <button class="stake-chip" data-stake="$10">$10</button>
+        <button class="stake-chip" data-stake="$20">$20</button>
+        <button class="stake-chip" data-stake="$50">$50</button>
+        <button class="stake-chip" data-stake="$100">$100</button>
+        <button class="stake-chip" data-stake="$200">$200</button>
+      </div>
+    </nav>
+
+    <!-- Hero Controls Bar: Input, auto-refresh interval select, refresh button -->
+    <section class="hero-controls-bar" aria-label="Hero and Refresh Controls">
+      <div class="hero-input-group">
+        <span class="hero-input-icon" aria-hidden="true">👤</span>
+        <input 
+          type="text" 
+          id="hero-input" 
+          class="hero-input" 
+          placeholder="Hero Nickname" 
+          autocomplete="off" 
+          autocorrect="off" 
+          autocapitalize="none"
+          spellcheck="false"
+        >
+        <button id="hero-clear" class="hero-clear-btn" aria-label="Clear hero nickname" title="Clear">✕</button>
+      </div>
+
+      <!-- Auto-refresh interval selector -->
+      <select id="refresh-interval" class="refresh-select" aria-label="Auto-refresh interval">
+        <option value="15">Auto 15s</option>
+        <option value="30">Auto 30s</option>
+        <option value="0">Off</option>
+      </select>
+
+      <!-- Manual refresh button -->
+      <button id="btn-refresh" class="btn-refresh" aria-label="Refresh leaderboard data" title="Refresh">🔄</button>
+    </section>
+
+    <!-- Hero Spotlight Card: Large Rank Badge, Nickname, Points, Prize, Gap Telemetry -->
+    <section id="hero-spotlight-card" class="hero-spotlight-card" aria-label="Hero Telemetry Spotlight">
+      <div class="spotlight-top">
+        <div class="spotlight-identity">
+          <div id="spotlight-rank-badge" class="large-rank-badge rank-unranked">-</div>
+          <div class="spotlight-info">
+            <div id="spotlight-nick" class="spotlight-nick">No Hero Set</div>
+            <div id="spotlight-stake" class="spotlight-stake-sub">$0.25 Stake</div>
+          </div>
+        </div>
+
+        <div class="spotlight-prize-badge">
+          <div id="spotlight-prize" class="prize-pill">-</div>
+          <div id="spotlight-points" class="points-display">0.0 pts</div>
+        </div>
+      </div>
+
+      <!-- Telemetry Gap / Cushion Grid -->
+      <div class="spotlight-telemetry-grid">
+        <div class="telemetry-cell">
+          <div class="telemetry-label">To Next Rank</div>
+          <div id="spotlight-pts-next" class="telemetry-value gold">-</div>
+        </div>
+        <div class="telemetry-cell">
+          <div class="telemetry-label">Defensive Cushion</div>
+          <div id="spotlight-cushion" class="telemetry-value green">-</div>
+        </div>
+      </div>
+
+      <!-- Bubble Danger Alert Banner -->
+      <div id="spotlight-danger-banner" class="danger-alert-banner hidden">
+        <span aria-hidden="true">⚠️</span>
+        <span id="danger-banner-text">Caution: Cushion &lt; 1 win away!</span>
+      </div>
+    </section>
+
+    <!-- Leaderboard Table: Rank Badges, Nicknames, Points, Prizes, Hero Row Highlighting -->
+    <section class="table-section" aria-label="Leaderboard Rankings">
+      <div class="table-header-title">
+        <h2 id="table-title">Top 50 Rankings</h2>
+        <span id="prize-pool-badge" class="prize-pool-pill">$0 Prize Pool</span>
+      </div>
+
+      <div id="leaderboard-list" class="leaderboard-list" role="list">
+        <!-- Rendered dynamically by app.js -->
+        <div class="hero-empty-notice">Loading rankings...</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PIN Lock Screen Overlay: Numeric Keypad & Input for Single-User Gate -->
+  <div id="pin-lock-overlay" class="pin-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="PIN Authentication">
+    <div class="pin-modal" id="pin-modal-card">
+      <div class="pin-modal-icon" aria-hidden="true">🔒</div>
+      <div>
+        <h2>Private Access Gate</h2>
+        <p>Enter 4-digit PIN to access GGPoker HUD</p>
+      </div>
+
+      <!-- PIN Display Dots -->
+      <div class="pin-display-wrapper" aria-label="PIN entry indicator">
+        <span class="pin-dot" id="dot-0"></span>
+        <span class="pin-dot" id="dot-1"></span>
+        <span class="pin-dot" id="dot-2"></span>
+        <span class="pin-dot" id="dot-3"></span>
+      </div>
+
+      <!-- Hidden real input for mobile keyboard / autofill / accessibility -->
+      <input 
+        type="password" 
+        id="pin-hidden-input" 
+        maxlength="8" 
+        inputmode="numeric" 
+        pattern="[0-9]*" 
+        style="position: absolute; opacity: 0; pointer-events: none;"
+        aria-hidden="true"
+      >
+
+      <!-- Error message container with shake animation -->
+      <div id="pin-error" class="pin-error-msg" role="alert"></div>
+
+      <!-- Numeric Keypad -->
+      <div class="pin-keypad">
+        <button class="pin-btn" data-key="1">1</button>
+        <button class="pin-btn" data-key="2">2</button>
+        <button class="pin-btn" data-key="3">3</button>
+        <button class="pin-btn" data-key="4">4</button>
+        <button class="pin-btn" data-key="5">5</button>
+        <button class="pin-btn" data-key="6">6</button>
+        <button class="pin-btn" data-key="7">7</button>
+        <button class="pin-btn" data-key="8">8</button>
+        <button class="pin-btn" data-key="9">9</button>
+        <button class="pin-btn action-btn" data-key="clear" title="Clear PIN">C</button>
+        <button class="pin-btn" data-key="0">0</button>
+        <button class="pin-btn action-btn enter-btn" data-key="enter" title="Unlock">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notice -->
+  <div id="toast-notice" class="toast-notice" role="status" aria-live="polite"></div>
+
+  <!-- Frontend Logic -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
