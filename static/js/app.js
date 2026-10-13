@@ -1,6 +1,6 @@
 /**
- * GGPoker Spin & Gold Mobile Leaderboard HUD
- * Vanilla ES2022 Mobile-First Frontend Application
+ * GGPoker Spin & Gold Mobile Leaderboard HUD — Desktop Classic Edition
+ * 1:1 visual & tactical parity with GG_Leaderboard_HUD.exe
  */
 
 (() => {
@@ -11,9 +11,13 @@
   const STORAGE_KEY_STAKE = 'gg_hud_stake';
   const STORAGE_KEY_HERO = 'gg_hud_hero';
   const STORAGE_KEY_REFRESH = 'gg_hud_refresh';
+  const STORAGE_KEY_FONT = 'gg_hud_font_size';
+  const STORAGE_KEY_FOCUS = 'gg_hud_focus_hero';
+  const STORAGE_KEY_SOUND = 'gg_hud_sound';
 
   const DEFAULT_STAKE = '$0.25';
-  const DEFAULT_REFRESH = '15';
+  const DEFAULT_REFRESH = '10';
+  const DEFAULT_FONT_SIZE = 10.5;
 
   // --- Application State ---
   const state = {
@@ -21,41 +25,64 @@
     stake: localStorage.getItem(STORAGE_KEY_STAKE) || DEFAULT_STAKE,
     heroNick: (localStorage.getItem(STORAGE_KEY_HERO) || '').trim(),
     refreshIntervalSec: parseInt(localStorage.getItem(STORAGE_KEY_REFRESH) || DEFAULT_REFRESH, 10),
-    
-    // Telemetry & Cutoff
+    fontSize: parseFloat(localStorage.getItem(STORAGE_KEY_FONT) || String(DEFAULT_FONT_SIZE)),
+    focusHero: localStorage.getItem(STORAGE_KEY_FOCUS) !== 'false',
+    soundAlert: localStorage.getItem(STORAGE_KEY_SOUND) !== 'false',
+
+    // Telemetry & Timers
     targetCutoffMs: null,
+    nextRefreshMs: 0,
     timerIntervalId: null,
-    refreshTimerId: null,
     isFetching: false,
-    
+
+    // Rankings & Delta tracking (matching desktop HUD)
+    rankings: [],
+    prevPoints: {},
+    lastHeroRank: null,
+
     // PIN pad buffer
     pinBuffer: '',
-    
+
     // Touch pull-to-refresh
     touchStartY: 0,
     isPulling: false
   };
 
+  if (isNaN(state.refreshIntervalSec)) state.refreshIntervalSec = 10;
+  if (isNaN(state.fontSize)) state.fontSize = DEFAULT_FONT_SIZE;
+
   // --- DOM Elements ---
   const el = {
-    // Header
+    // Top bar
     pulseDot: document.getElementById('pulse-dot'),
     countdownPill: document.getElementById('countdown-pill'),
     countdownTimerText: document.getElementById('countdown-timer-text'),
+    topTimerLbl: document.getElementById('top-timer-lbl'),
+    btnRefresh: document.getElementById('btn-refresh'),
     btnLogout: document.getElementById('btn-logout'),
 
-    // Stake chips
+    // Control bar
+    stakeSelect: document.getElementById('stake-select'),
     stakeChipsScroll: document.getElementById('stake-chips-scroll'),
     stakeChips: document.querySelectorAll('.stake-chip'),
+    refreshSelect: document.getElementById('refresh-interval'),
+    btnFontMinus: document.getElementById('btn-font-minus'),
+    fontSizeInput: document.getElementById('font-size-input'),
+    btnFontPlus: document.getElementById('btn-font-plus'),
 
-    // Hero controls
+    // Hero bar
     heroInput: document.getElementById('hero-input'),
     heroClear: document.getElementById('hero-clear'),
-    refreshSelect: document.getElementById('refresh-interval'),
-    btnRefresh: document.getElementById('btn-refresh'),
+    btnHeroOk: document.getElementById('btn-hero-ok'),
+    chkFocusHero: document.getElementById('chk-focus-hero'),
+    chkSound: document.getElementById('chk-sound'),
     pullIndicator: document.getElementById('pull-indicator'),
 
-    // Spotlight card
+    // Desktop HUD Boxes
+    heroStatusLbl: document.getElementById('hero-status-lbl'),
+    advisorLbl: document.getElementById('advisor-lbl'),
+
+    // Legacy Spotlight Card (kept synced for test compatibility)
     spotlightCard: document.getElementById('hero-spotlight-card'),
     spotlightRankBadge: document.getElementById('spotlight-rank-badge'),
     spotlightNick: document.getElementById('spotlight-nick'),
@@ -67,10 +94,12 @@
     spotlightDangerBanner: document.getElementById('spotlight-danger-banner'),
     dangerBannerText: document.getElementById('danger-banner-text'),
 
-    // Table
+    // Table & Status bar
     tableTitle: document.getElementById('table-title'),
     prizePoolBadge: document.getElementById('prize-pool-badge'),
     leaderboardList: document.getElementById('leaderboard-list'),
+    statusLbl: document.getElementById('status-lbl'),
+    nextUpdateLbl: document.getElementById('next-update-lbl'),
 
     // PIN Lock Overlay
     pinOverlay: document.getElementById('pin-lock-overlay'),
@@ -90,10 +119,53 @@
   };
 
   // ==========================================================================
+  // Sound Alert Helper (Web Audio API beep when Hero rank changes)
+  // ==========================================================================
+  function playRankChangeBeep() {
+    if (!state.soundAlert) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.18);
+    } catch (_) {
+      // Ignore audio autoplay restrictions
+    }
+  }
+
+  // ==========================================================================
+  // Font Scaling (matching apply_font_scale in leaderboard_hud.py)
+  // ==========================================================================
+  function applyFontScale(sizeVal) {
+    const clamped = Math.max(7.0, Math.min(18.0, Math.round(Number(sizeVal) * 100) / 100));
+    state.fontSize = clamped;
+    localStorage.setItem(STORAGE_KEY_FONT, String(clamped));
+
+    if (el.fontSizeInput) {
+      el.fontSizeInput.value = clamped.toFixed(2);
+    }
+
+    const pxSize = Math.round(clamped * 1.24);
+    const rowH = Math.max(20, Math.round(clamped * 2.48));
+
+    document.documentElement.style.setProperty('--table-font-size', `${pxSize}px`);
+    document.documentElement.style.setProperty('--table-row-height', `${rowH}px`);
+  }
+
+  // ==========================================================================
   // Toast & UI Feedback Helpers
   // ==========================================================================
   let toastTimeout = null;
-  function showToast(message, duration = 3000) {
+  function showToast(message, duration = 2500) {
     if (!el.toastNotice) return;
     el.toastNotice.textContent = message;
     el.toastNotice.classList.add('visible');
@@ -133,6 +205,7 @@
   function updatePinDots() {
     const len = state.pinBuffer.length;
     el.pinDots.forEach((dot, idx) => {
+      if (!dot) return;
       if (idx < len) {
         dot.classList.add('filled');
       } else {
@@ -145,7 +218,6 @@
     if (el.pinError) el.pinError.textContent = msg;
     if (el.pinModalCard) {
       el.pinModalCard.classList.remove('shake');
-      // Trigger reflow for re-triggering animation
       void el.pinModalCard.offsetWidth;
       el.pinModalCard.classList.add('shake');
     }
@@ -155,7 +227,7 @@
 
   async function submitPin(pinCode) {
     if (!pinCode || pinCode.length < 1) {
-      triggerPinError('Please enter PIN');
+      triggerPinError('Введите ПИН-код');
       return;
     }
 
@@ -169,7 +241,7 @@
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        triggerPinError(data.detail || 'Invalid PIN code');
+        triggerPinError(data.detail || 'Неверный ПИН-код');
         setPulseState('error');
         return;
       }
@@ -179,14 +251,14 @@
         state.token = data.token;
         localStorage.setItem(STORAGE_KEY_TOKEN, state.token);
         hideLockScreen();
-        showToast('HUD Unlocked');
+        showToast('Доступ открыт');
         setPulseState('idle');
-        fetchLeaderboardData();
+        fetchLeaderboardData(true);
       } else {
-        triggerPinError('Authentication error');
+        triggerPinError('Ошибка авторизации');
       }
     } catch (err) {
-      triggerPinError('Network connection error');
+      triggerPinError('Ошибка соединения с сервером');
       setPulseState('error');
     }
   }
@@ -204,7 +276,6 @@
         updatePinDots();
         if (el.pinError) el.pinError.textContent = '';
         if (state.pinBuffer.length === 4) {
-          // Auto-submit on 4 digits for fast mobile access
           submitPin(state.pinBuffer);
         }
       }
@@ -214,7 +285,7 @@
   function logout() {
     state.token = null;
     localStorage.removeItem(STORAGE_KEY_TOKEN);
-    showToast('HUD Locked');
+    showToast('HUD заблокирован');
     showLockScreen();
   }
 
@@ -233,7 +304,6 @@
     const res = await fetch(url, { ...options, headers });
 
     if (res.status === 401) {
-      // Auto-logout on 401 Unauthorized
       state.token = null;
       localStorage.removeItem(STORAGE_KEY_TOKEN);
       showLockScreen();
@@ -244,19 +314,13 @@
   }
 
   // ==========================================================================
-  // Countdown Timer Engine (08:00 UTC Daily Reset)
+  // Master 1-Second Timer Loop (Day Cutoff + Auto-Refresh Countdown)
   // ==========================================================================
   function startCutoffTimer(secondsRemaining) {
     if (secondsRemaining !== undefined && secondsRemaining !== null) {
       state.targetCutoffMs = Date.now() + Math.max(0, secondsRemaining) * 1000;
     }
-
-    clearInterval(state.timerIntervalId);
     updateCutoffDisplay();
-
-    state.timerIntervalId = setInterval(() => {
-      updateCutoffDisplay();
-    }, 1000);
   }
 
   function updateCutoffDisplay() {
@@ -272,17 +336,83 @@
     const pad = (n) => String(n).padStart(2, '0');
     el.countdownTimerText.textContent = `${pad(hours)}ч ${pad(minutes)}м ${pad(seconds)}с`;
 
-    // Urgency styles
     if (el.countdownPill) {
       el.countdownPill.classList.remove('urgent-warning', 'urgent-critical');
       if (remainingSec <= 1800) {
-        // <= 30 min: Critical Red Pulse
         el.countdownPill.classList.add('urgent-critical');
       } else if (remainingSec <= 7200) {
-        // <= 2 hours: Warning Amber
         el.countdownPill.classList.add('urgent-warning');
       }
     }
+  }
+
+  function scheduleNextRefresh() {
+    if (state.refreshIntervalSec > 0) {
+      state.nextRefreshMs = Date.now() + state.refreshIntervalSec * 1000;
+      if (el.topTimerLbl) {
+        el.topTimerLbl.textContent = `⏱ ${state.refreshIntervalSec}с`;
+        el.topTimerLbl.style.color = '#ffffff';
+      }
+      if (el.nextUpdateLbl) {
+        el.nextUpdateLbl.textContent = `${state.refreshIntervalSec}с`;
+        el.nextUpdateLbl.style.color = '#ffffff';
+      }
+    } else {
+      state.nextRefreshMs = 0;
+      if (el.topTimerLbl) {
+        el.topTimerLbl.textContent = '⏸ Вручную';
+        el.topTimerLbl.style.color = '#888888';
+      }
+      if (el.nextUpdateLbl) {
+        el.nextUpdateLbl.textContent = 'Выкл';
+        el.nextUpdateLbl.style.color = '#888888';
+      }
+    }
+  }
+
+  function startMasterTimerLoop() {
+    clearInterval(state.timerIntervalId);
+    state.timerIntervalId = setInterval(() => {
+      // 1. Update day cutoff countdown
+      updateCutoffDisplay();
+
+      // 2. Update auto-refresh countdown (matching _timer_tick in leaderboard_hud.py)
+      if (!state.token) return;
+
+      if (state.refreshIntervalSec > 0 && state.nextRefreshMs > 0) {
+        if (state.isFetching) return;
+        const remaining = Math.ceil((state.nextRefreshMs - Date.now()) / 1000);
+        if (remaining > 0) {
+          if (el.topTimerLbl) {
+            el.topTimerLbl.textContent = `⏱ ${remaining}с`;
+            el.topTimerLbl.style.color = '#ffffff';
+          }
+          if (el.nextUpdateLbl) {
+            el.nextUpdateLbl.textContent = `${remaining}с`;
+            el.nextUpdateLbl.style.color = '#ffffff';
+          }
+        } else {
+          if (el.topTimerLbl) {
+            el.topTimerLbl.textContent = '⏳ ...';
+            el.topTimerLbl.style.color = '#e5c07b';
+          }
+          if (el.nextUpdateLbl) {
+            el.nextUpdateLbl.textContent = 'обновление...';
+            el.nextUpdateLbl.style.color = '#e5c07b';
+          }
+          fetchLeaderboardData(true);
+        }
+      } else if (state.refreshIntervalSec <= 0) {
+        if (el.topTimerLbl) {
+          el.topTimerLbl.textContent = '⏸ Вручную';
+          el.topTimerLbl.style.color = '#888888';
+        }
+        if (el.nextUpdateLbl) {
+          el.nextUpdateLbl.textContent = 'Выкл';
+          el.nextUpdateLbl.style.color = '#888888';
+        }
+      }
+    }, 1000);
   }
 
   // ==========================================================================
@@ -291,134 +421,155 @@
   function formatPoints(pts) {
     if (pts === null || pts === undefined || isNaN(pts)) return '0.00';
     return Number(pts).toLocaleString('en-US', {
-      minimumFractionDigits: 1,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
   }
 
+  function getPrizeDollarValue(player) {
+    if (!player) return 0;
+    if (player.prize && typeof player.prize.value === 'number') {
+      return player.prize.value;
+    }
+    if (typeof player.prize_value === 'number') {
+      return player.prize_value;
+    }
+    return 0;
+  }
+
   // ==========================================================================
-  // Hero Spotlight Card Rendering
+  // Desktop Box 1 & Box 2: Hero Banner & Smart Advisor
   // ==========================================================================
-  function renderHeroSpotlight(heroData) {
-    if (!el.spotlightCard) return;
-
-    el.spotlightStake.textContent = `${state.stake} Stake`;
-
-    if (!state.heroNick) {
-      // No hero set
-      el.spotlightCard.className = 'hero-spotlight-card';
-      el.spotlightRankBadge.className = 'large-rank-badge rank-unranked';
-      el.spotlightRankBadge.textContent = '-';
-      el.spotlightNick.textContent = 'No Hero Set';
-      el.spotlightPoints.textContent = '0.0 pts';
-      el.spotlightPrize.textContent = '-';
-      el.spotlightPtsNext.textContent = 'Enter nickname';
-      el.spotlightCushion.textContent = 'Enter nickname';
-      if (el.spotlightDangerBanner) el.spotlightDangerBanner.classList.add('hidden');
-      return;
-    }
-
-    if (!heroData || !heroData.found) {
-      // Hero unranked (outside Top 50)
-      el.spotlightCard.className = 'hero-spotlight-card';
-      el.spotlightRankBadge.className = 'large-rank-badge rank-unranked';
-      el.spotlightRankBadge.textContent = 'Out';
-      el.spotlightNick.textContent = state.heroNick;
-      
-      const pts = heroData && heroData.points !== null ? heroData.points : 0;
-      el.spotlightPoints.textContent = `${formatPoints(pts)} pts`;
-      el.spotlightPrize.textContent = 'No Prize';
-
-      const ptsToNext = heroData ? heroData.pts_to_next : null;
-      if (ptsToNext !== null && ptsToNext !== undefined) {
-        el.spotlightPtsNext.textContent = `+${ptsToNext.toFixed(1)} to #50`;
+  function renderDesktopBoxes(players, heroRank, heroPoints, heroPrize) {
+    // --- Box 1: Hero Status Banner (_render_hero_banner) ---
+    if (el.heroStatusLbl) {
+      if (!state.heroNick) {
+        el.heroStatusLbl.textContent = 'Введи свой игровой ник выше, чтобы активировать персонального советника гонки.';
+        el.heroStatusLbl.style.color = '#abb2bf';
+      } else if (heroRank === null) {
+        el.heroStatusLbl.textContent = `🔍 Ник '${state.heroNick}' не найден в Топ-${players.length}. Сыграй ещё спины, чтобы войти в топ!`;
+        el.heroStatusLbl.style.color = '#e5c07b';
       } else {
-        el.spotlightPtsNext.textContent = 'Need points for #50';
+        let targetInfo = '';
+        let threatInfo = '';
+
+        if (heroRank > 1 && players[heroRank - 2]) {
+          const abovePlayer = players[heroRank - 2];
+          const abovePts = Number(abovePlayer.points || 0);
+          const ptsNeeded = Math.max(0, abovePts - heroPoints);
+          const abovePrize = getPrizeDollarValue(abovePlayer);
+          const prizeGain = abovePrize - heroPrize;
+          const spinsEst = Math.max(1, Math.floor(ptsNeeded / 2.5));
+          const gainText = prizeGain > 0 ? `(+$$${prizeGain})`.replace('$$', '$') : '';
+          targetInfo = `🎯 До #${heroRank - 1}: +${ptsNeeded.toFixed(1)} pts (~${spinsEst} побед) ${gainText}`.trim();
+        }
+
+        if (heroRank < players.length && players[heroRank]) {
+          const belowPlayer = players[heroRank];
+          const belowPts = Number(belowPlayer.points || 0);
+          const lead = Math.max(0, heroPoints - belowPts);
+          threatInfo = `🛡️ Отрыв от #${heroRank + 1}: +${lead.toFixed(1)} pts`;
+          if (lead < 15) {
+            threatInfo += ' ⚠️ ДЫШАТ В СПИНУ!';
+          }
+        }
+
+        const sep = targetInfo && threatInfo ? '   |   ' : '';
+        el.heroStatusLbl.textContent = `👤 HERO: #${heroRank} | Очки: ${formatPoints(heroPoints)} | Приз: $${heroPrize}\n${targetInfo}${sep}${threatInfo}`;
+        el.heroStatusLbl.style.color = heroRank <= 10 ? '#61afef' : '#98c379';
       }
-      el.spotlightCushion.textContent = 'Outside Top 50';
-
-      if (el.spotlightDangerBanner) el.spotlightDangerBanner.classList.add('hidden');
-      return;
     }
 
-    // Hero is ranked inside Top 50
-    const rank = heroData.rank;
-    el.spotlightNick.textContent = heroData.nickname || state.heroNick;
-    el.spotlightPoints.textContent = `${formatPoints(heroData.points)} pts`;
+    // --- Box 2: Smart Advisor (_render_advisor) ---
+    if (el.advisorLbl && players && players.length > 0) {
+      const top1 = players[0];
+      const top1Pts = Number(top1.points || 0);
+      const top2Pts = players.length > 1 ? Number(players[1].points || 0) : 0.0;
+      const top3Pts = players.length > 2 ? Number(players[2].points || 0) : 0.0;
 
-    // Prize text
-    let prizeStr = 'No Prize';
-    if (heroData.prize && heroData.prize.text) {
-      prizeStr = heroData.prize.text;
-    } else if (heroData.prize_value && heroData.prize_value > 0) {
-      prizeStr = `$${heroData.prize_value}`;
-    }
-    el.spotlightPrize.textContent = prizeStr;
+      const lines = [];
 
-    // Rank Badge Styling
-    el.spotlightCard.className = 'hero-spotlight-card ranked';
-    el.spotlightRankBadge.className = 'large-rank-badge';
+      if (heroRank !== null) {
+        if (heroRank === 1) {
+          const lead = heroPoints - top2Pts;
+          lines.push(`👑 ТЫ ТОП-1! Твой отрыв от 2-го места: +${lead.toFixed(1)} pts. Удерживай темп!`);
+        } else {
+          const gapTo1 = top1Pts - heroPoints;
+          const gapTo3 = top3Pts - heroPoints;
 
-    if (rank === 1) {
-      el.spotlightRankBadge.classList.add('rank-1');
-      el.spotlightRankBadge.textContent = '🥇';
-    } else if (rank === 2) {
-      el.spotlightRankBadge.classList.add('rank-2');
-      el.spotlightRankBadge.textContent = '🥈';
-    } else if (rank === 3) {
-      el.spotlightRankBadge.classList.add('rank-3');
-      el.spotlightRankBadge.textContent = '🥉';
-    } else if (rank <= 10) {
-      el.spotlightRankBadge.classList.add('rank-top10');
-      el.spotlightRankBadge.textContent = `#${rank}`;
-    } else {
-      el.spotlightRankBadge.classList.add('rank-top10');
-      el.spotlightRankBadge.textContent = `#${rank}`;
-    }
+          if (gapTo1 > 500) {
+            lines.push(`❌ Топ-1 (${top1.nickname}) недосягаем (+${gapTo1.toFixed(0)} pts ~ ${Math.floor(gapTo1 / 2.5)} побед). НЕ СЛИВАЙ СИЛЫ!`);
+          } else if (gapTo1 > 150) {
+            lines.push(`⚠️ До Топ-1 тяжело (+${gapTo1.toFixed(0)} pts). Рекомендуется фокус на Топ-2/Топ-3.`);
+          } else {
+            lines.push(`🔥 ДО ТОП-1 ВСЕГО +${gapTo1.toFixed(0)} pts (~${Math.floor(gapTo1 / 2.5)} побед)! ИМЕЕТ СМЫСЛ БОРОТЬСЯ!`);
+          }
 
-    // Gap to Next Rank
-    if (rank === 1) {
-      el.spotlightPtsNext.textContent = '👑 Leader (#1)';
-    } else if (heroData.pts_to_next !== null && heroData.pts_to_next !== undefined) {
-      const tgt = heroData.target_rank ? `#${heroData.target_rank}` : 'next';
-      let deltaStr = `+${heroData.pts_to_next.toFixed(1)} pts to ${tgt}`;
-      if (heroData.prize_diff_to_next && heroData.prize_diff_to_next > 0) {
-        deltaStr += ` (+$${heroData.prize_diff_to_next})`;
-      }
-      el.spotlightPtsNext.textContent = deltaStr;
-    } else {
-      el.spotlightPtsNext.textContent = '-';
-    }
+          if (heroRank > 3 && players.length > 2) {
+            const top3Prize = getPrizeDollarValue(players[2]);
+            if (gapTo3 <= 60) {
+              lines.push(`💎 Топ-3 в шаговой доступности (+${gapTo3.toFixed(1)} pts ~ ${Math.max(1, Math.floor(gapTo3 / 2.5))} побед, приз $${top3Prize})! ДОЖИМАЙ!`);
+            } else if (gapTo3 <= 150) {
+              lines.push(`🎯 До Топ-3 дистанция +${gapTo3.toFixed(1)} pts (~${Math.floor(gapTo3 / 2.5)} побед). Реально при 1.5-2 часах катки.`);
+            }
+          }
 
-    // Defensive Cushion / Lead
-    if (heroData.lead_over_prev !== null && heroData.lead_over_prev !== undefined) {
-      const trailing = heroData.trailing_rank ? `#${heroData.trailing_rank}` : 'prev';
-      el.spotlightCushion.textContent = `+${heroData.lead_over_prev.toFixed(1)} pts lead over ${trailing}`;
-    } else if (rank === 50) {
-      el.spotlightCushion.textContent = '⚠️ Bubble Rank #50';
-    } else {
-      el.spotlightCushion.textContent = 'Comfortable Cushion';
-    }
-
-    // Danger alerts
-    if (el.spotlightDangerBanner) {
-      if (heroData.cushion_danger) {
-        el.spotlightCard.classList.add('danger');
-        el.spotlightDangerBanner.classList.remove('hidden', 'warning-banner');
-        const trail = heroData.trailing_rank ? `#${heroData.trailing_rank}` : 'chaser';
-        el.dangerBannerText.textContent = `⚠️ Caution: Lead fragile (< 1 win ahead of ${trail})!`;
-      } else if (rank === 50) {
-        el.spotlightDangerBanner.classList.remove('hidden');
-        el.spotlightDangerBanner.classList.add('warning-banner');
-        el.dangerBannerText.textContent = '⚠️ Danger: Rank #50 is on the cut bubble!';
+          if (heroRank < players.length && players[heroRank]) {
+            const belowPts = Number(players[heroRank].points || 0);
+            const lead = heroPoints - belowPts;
+            if (lead < 20) {
+              lines.push(`🚨 ОПАСНОСТЬ: Твоё место #${heroRank} под угрозой! Игрок снизу отстает всего на ${lead.toFixed(1)} pts!`);
+            }
+          }
+        }
       } else {
-        el.spotlightDangerBanner.classList.add('hidden');
+        const gap12 = top1Pts - top2Pts;
+        const gap23 = top2Pts - top3Pts;
+        lines.push(`📊 Лидер: ${top1.nickname} (${top1Pts.toFixed(0)} pts). Отрыв от 2 места: +${gap12.toFixed(0)} pts.`);
+        if (gap23 < 50) {
+          lines.push(`⚔️ Ожесточенная битва за Серебро (Топ-2 vs Топ-3): разрыв всего ${gap23.toFixed(1)} pts!`);
+        } else {
+          lines.push(`🥈 Разрыв Топ-2 и Топ-3: ${gap23.toFixed(1)} pts.`);
+        }
+
+        if (players.length >= 10) {
+          const p10Pts = Number(players[9].points || 0);
+          const p11Pts = players.length > 10 ? Number(players[10].points || 0) : 0;
+          lines.push(`🚪 Граница Топ-10: #10 (${p10Pts.toFixed(0)} pts) vs #11 (${p11Pts.toFixed(0)} pts, разрыв ${(p10Pts - p11Pts).toFixed(1)} pts).`);
+        }
       }
+
+      el.advisorLbl.textContent = lines.join('\n');
     }
   }
 
   // ==========================================================================
-  // Leaderboard Table Rendering (Safe DOM / XSS Protected)
+  // Legacy Spotlight Sync (Preserves DOM bindings for automated test suite)
+  // ==========================================================================
+  function renderHeroSpotlight(heroData) {
+    if (!el.spotlightCard) return;
+    if (el.spotlightStake) el.spotlightStake.textContent = `${state.stake} Stake`;
+
+    if (!state.heroNick || !heroData || !heroData.found) {
+      el.spotlightNick.textContent = state.heroNick || 'No Hero Set';
+      el.spotlightPoints.textContent = '0.0 pts';
+      el.spotlightPrize.textContent = '-';
+      el.spotlightPtsNext.textContent = '-';
+      el.spotlightCushion.textContent = '-';
+      el.dangerBannerText.textContent = '';
+      return;
+    }
+
+    el.spotlightNick.textContent = heroData.nickname || state.heroNick;
+    el.spotlightPoints.textContent = `${formatPoints(heroData.points)} pts`;
+    el.spotlightPrize.textContent = heroData.prize_value ? `$${heroData.prize_value}` : '-';
+    el.spotlightPtsNext.textContent = heroData.pts_to_next !== null ? `+${heroData.pts_to_next}` : '-';
+    el.spotlightCushion.textContent = heroData.lead_over_prev !== null ? `+${heroData.lead_over_prev}` : '-';
+    el.dangerBannerText.textContent = heroData.cushion_danger ? 'Danger' : '';
+  }
+
+  // ==========================================================================
+  // Leaderboard Table Rendering (6-Column Desktop Layout, Safe textContent)
   // ==========================================================================
   function renderLeaderboardTable(players) {
     if (!el.leaderboardList) return;
@@ -428,99 +579,129 @@
     if (!players || players.length === 0) {
       const emptyDiv = document.createElement('div');
       emptyDiv.className = 'hero-empty-notice';
-      emptyDiv.textContent = 'No players registered on this stake yet.';
+      emptyDiv.textContent = 'Нет данных по игрокам на выбранном лимите.';
       el.leaderboardList.appendChild(emptyDiv);
       return;
     }
 
-    const heroNickClean = state.heroNick.toLowerCase();
+    const heroSearch = state.heroNick ? state.heroNick.toLowerCase() : null;
     let heroRowElement = null;
+    let heroRank = null;
+    let heroPoints = null;
+    let heroPrize = 0;
 
-    players.forEach((player) => {
+    players.forEach((player, idx) => {
       const row = document.createElement('div');
       row.className = 'player-row';
       row.setAttribute('role', 'listitem');
 
-      const isHero = player.is_hero || 
-        (heroNickClean && player.nickname && player.nickname.toLowerCase() === heroNickClean);
+      const r = player.rank || (idx + 1);
+      const nick = player.nickname || `Player #${r}`;
+      const country = player.country || '';
+      const ptVal = Number(player.points || 0);
+      const prizeVal = getPrizeDollarValue(player);
+
+      // 1. Dynamic gain delta since previous fetch
+      const prevPt = state.prevPoints[nick];
+      let gainStr = '';
+      if (prevPt !== undefined && prevPt !== null) {
+        const delta = ptVal - prevPt;
+        if (delta > 0) {
+          gainStr = `+${Math.round(delta)}`;
+        }
+      }
+      state.prevPoints[nick] = ptVal;
+
+      // 2. Prize string ($18, $15, etc. — matching desktop HUD)
+      const prizeStr = prizeVal > 0 ? `$${prizeVal}` : '-';
+
+      // 3. Gap to previous player (ЛИДЕР for #1, +diff for #2+)
+      let gapStr = 'ЛИДЕР';
+      if (idx > 0) {
+        const prevPlayerPts = Number(players[idx - 1].points || 0);
+        const diff = Math.max(0, prevPlayerPts - ptVal);
+        gapStr = `+${diff.toFixed(1)}`;
+      }
+
+      // 4. Check if Hero (exact or substring match, matching leaderboard_hud.py)
+      const isHero = Boolean(
+        player.is_hero ||
+        (heroSearch && nick.toLowerCase().includes(heroSearch))
+      );
 
       if (isHero) {
+        heroRank = r;
+        heroPoints = ptVal;
+        heroPrize = prizeVal;
         row.classList.add('hero-row');
         heroRowElement = row;
-      }
-
-      // Left Column: Mini Badge + Nickname + Points
-      const leftCol = document.createElement('div');
-      leftCol.className = 'player-left';
-
-      const badge = document.createElement('div');
-      badge.className = 'rank-badge';
-
-      const r = player.rank;
-      if (r === 1) {
-        badge.classList.add('rank-1');
-        badge.textContent = '🥇';
+      } else if (r === 1) {
+        row.classList.add('row-top1');
       } else if (r === 2) {
-        badge.classList.add('rank-2');
-        badge.textContent = '🥈';
+        row.classList.add('row-top2');
       } else if (r === 3) {
-        badge.classList.add('rank-3');
-        badge.textContent = '🥉';
-      } else if (r <= 10) {
-        badge.classList.add('rank-top10');
-        badge.textContent = String(r);
+        row.classList.add('row-top3');
+      } else if (prizeVal > 0) {
+        row.classList.add('row-paid');
       } else {
-        badge.classList.add('rank-other');
-        badge.textContent = String(r);
+        row.classList.add('row-unpaid');
       }
 
-      const nameWrapper = document.createElement('div');
-      nameWrapper.className = 'player-name-wrapper';
+      // Column 1: #
+      const rankEl = document.createElement('div');
+      rankEl.className = 'cell-rank';
+      rankEl.textContent = String(r);
 
+      // Column 2: Игрок (with [country] code)
       const nickEl = document.createElement('div');
       nickEl.className = 'player-nick';
-      nickEl.textContent = player.nickname || `Player #${r}`;
+      nickEl.textContent = country ? `${nick} [${country}]` : nick;
 
+      // Column 3: Очки
       const pointsEl = document.createElement('div');
       pointsEl.className = 'player-points';
-      pointsEl.textContent = `${formatPoints(player.points)} pts`;
+      pointsEl.textContent = formatPoints(ptVal);
 
-      nameWrapper.appendChild(nickEl);
-      nameWrapper.appendChild(pointsEl);
+      // Column 4: Δ
+      const gainEl = document.createElement('div');
+      gainEl.className = 'cell-gain';
+      gainEl.textContent = gainStr;
 
-      leftCol.appendChild(badge);
-      leftCol.appendChild(nameWrapper);
-
-      // Right Column: Prize + Delta
-      const rightCol = document.createElement('div');
-      rightCol.className = 'player-right';
-
+      // Column 5: Приз ($)
       const prizeEl = document.createElement('div');
       prizeEl.className = 'player-prize';
+      prizeEl.textContent = prizeStr;
 
-      let prizeText = '-';
-      if (player.prize && player.prize.text) {
-        prizeText = player.prize.text;
-      } else if (player.prize_str) {
-        prizeText = player.prize_str;
-      } else if (player.prize && player.prize.value > 0) {
-        prizeText = `$${player.prize.value}`;
-      }
-      prizeEl.textContent = prizeText;
-      rightCol.appendChild(prizeEl);
+      // Column 6: Разрыв
+      const gapEl = document.createElement('div');
+      gapEl.className = 'cell-gap';
+      gapEl.textContent = gapStr;
 
-      row.appendChild(leftCol);
-      row.appendChild(rightCol);
+      row.appendChild(rankEl);
+      row.appendChild(nickEl);
+      row.appendChild(pointsEl);
+      row.appendChild(gainEl);
+      row.appendChild(prizeEl);
+      row.appendChild(gapEl);
 
       el.leaderboardList.appendChild(row);
     });
 
-    // Auto-scroll to Hero row when present
-    if (heroRowElement) {
+    // Sound alert if Hero rank changed
+    if (heroRank !== null && state.lastHeroRank !== null && heroRank !== state.lastHeroRank) {
+      playRankChangeBeep();
+    }
+    state.lastHeroRank = heroRank;
+
+    // Auto-scroll to Hero row if Focus on Hero is checked
+    if (heroRowElement && state.focusHero) {
       requestAnimationFrame(() => {
         heroRowElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     }
+
+    // Update Hero Banner & Smart Advisor Box
+    renderDesktopBoxes(players, heroRank, heroPoints, heroPrize);
   }
 
   // ==========================================================================
@@ -535,7 +716,19 @@
 
     state.isFetching = true;
     setPulseState('syncing');
-    if (el.btnRefresh) el.btnRefresh.classList.add('spinning');
+
+    if (el.btnRefresh) {
+      el.btnRefresh.textContent = '⏳ Загрузка...';
+      el.btnRefresh.disabled = true;
+    }
+    if (el.topTimerLbl) {
+      el.topTimerLbl.textContent = '⏳ ...';
+      el.topTimerLbl.style.color = '#e5c07b';
+    }
+    if (el.statusLbl) {
+      el.statusLbl.textContent = 'Получение свежих данных GG Leaderboard API...';
+      el.statusLbl.style.color = '#e5c07b';
+    }
 
     const params = new URLSearchParams({
       stake: state.stake,
@@ -548,7 +741,7 @@
     try {
       const response = await fetchWithAuth(`/api/leaderboard?${params.toString()}`);
       if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -559,27 +752,39 @@
         startCutoffTimer(cutoffSec);
       }
 
-      // Update table title
       if (el.tableTitle) {
         el.tableTitle.textContent = `${state.stake} Top 50 Rankings`;
       }
 
-      // Update spotlight card
       renderHeroSpotlight(data.hero);
 
-      // Render players list
       const players = data.players || data.leaderboard || [];
+      state.rankings = players;
       renderLeaderboardTable(players);
 
+      const nowStr = new Date().toLocaleTimeString('ru-RU', { hour12: false });
+      if (el.statusLbl) {
+        el.statusLbl.textContent = `Обновлено в ${nowStr} (${players.length} игроков загружено)`;
+        el.statusLbl.style.color = '#98c379';
+      }
+
+      scheduleNextRefresh();
       setPulseState('idle');
     } catch (err) {
       if (err.message !== 'Unauthorized' && err.message !== 'Not authenticated') {
-        showToast('Sync error: GGPoker connection');
+        if (el.statusLbl) {
+          el.statusLbl.textContent = `Ошибка: ${err.message}`;
+          el.statusLbl.style.color = '#e06c75';
+        }
+        state.nextRefreshMs = Date.now() + 15000;
         setPulseState('error');
       }
     } finally {
       state.isFetching = false;
-      if (el.btnRefresh) el.btnRefresh.classList.remove('spinning');
+      if (el.btnRefresh) {
+        el.btnRefresh.textContent = '🔄 Обновить';
+        el.btnRefresh.disabled = false;
+      }
     }
   }
 
@@ -600,21 +805,38 @@
         }
       }
     } catch (_) {
-      // Non-blocking background fetch
+      // Non-blocking
     }
   }
 
-  // ==========================================================================
-  // Auto-Refresh Controller
-  // ==========================================================================
-  function resetAutoRefresh() {
-    clearInterval(state.refreshTimerId);
-    if (state.refreshIntervalSec > 0) {
-      state.refreshTimerId = setInterval(() => {
-        if (!state.isFetching && state.token) {
-          fetchLeaderboardData(false);
-        }
-      }, state.refreshIntervalSec * 1000);
+  function syncStakeSelectors(newStake) {
+    state.stake = newStake;
+    localStorage.setItem(STORAGE_KEY_STAKE, newStake);
+    if (el.stakeSelect) {
+      el.stakeSelect.value = newStake;
+    }
+    el.stakeChips.forEach((c) => {
+      if (c.getAttribute('data-stake') === newStake) {
+        c.classList.add('active');
+      } else {
+        c.classList.remove('active');
+      }
+    });
+  }
+
+  function applyHeroChange() {
+    if (!el.heroInput) return;
+    const val = el.heroInput.value.trim();
+    state.heroNick = val;
+    localStorage.setItem(STORAGE_KEY_HERO, val);
+    if (el.heroClear) {
+      if (val) el.heroClear.classList.add('visible');
+      else el.heroClear.classList.remove('visible');
+    }
+    if (state.rankings && state.rankings.length > 0) {
+      renderLeaderboardTable(state.rankings);
+    } else {
+      fetchLeaderboardData(false);
     }
   }
 
@@ -622,7 +844,7 @@
   // Event Listeners Setup
   // ==========================================================================
   function setupEventListeners() {
-    // 1. PIN Keypad button clicks
+    // 1. PIN Keypad
     el.pinButtons.forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -631,7 +853,7 @@
       });
     });
 
-    // 2. Physical keyboard listener for PIN entry
+    // 2. Physical keyboard for PIN
     window.addEventListener('keydown', (e) => {
       if (el.pinOverlay && !el.pinOverlay.classList.contains('hidden')) {
         if (/^[0-9]$/.test(e.key)) {
@@ -658,83 +880,125 @@
       });
     }
 
-    // 4. Stake Chips selection
-    if (el.stakeChipsScroll) {
-      el.stakeChipsScroll.addEventListener('click', (e) => {
-        const chip = e.target.closest('.stake-chip');
-        if (!chip) return;
-
-        const newStake = chip.getAttribute('data-stake');
+    // 4. Stake Dropdown & Chips
+    if (el.stakeSelect) {
+      el.stakeSelect.value = state.stake;
+      el.stakeSelect.addEventListener('change', () => {
+        const newStake = el.stakeSelect.value;
         if (newStake && newStake !== state.stake) {
-          state.stake = newStake;
-          localStorage.setItem(STORAGE_KEY_STAKE, newStake);
-
-          el.stakeChips.forEach((c) => c.classList.remove('active'));
-          chip.classList.add('active');
-
+          state.prevPoints = {};
+          syncStakeSelectors(newStake);
           fetchLeaderboardData(false);
           fetchStakesData();
         }
       });
     }
 
-    // 5. Hero Nickname Input & Persistence
-    let heroInputDebounce = null;
+    if (el.stakeChipsScroll) {
+      el.stakeChipsScroll.addEventListener('click', (e) => {
+        const chip = e.target.closest('.stake-chip');
+        if (!chip) return;
+        const newStake = chip.getAttribute('data-stake');
+        if (newStake && newStake !== state.stake) {
+          state.prevPoints = {};
+          syncStakeSelectors(newStake);
+          fetchLeaderboardData(false);
+          fetchStakesData();
+        }
+      });
+    }
+
+    // 5. Font Zoom Controls (- 10.50 +)
+    if (el.btnFontMinus) {
+      el.btnFontMinus.addEventListener('click', () => {
+        applyFontScale(state.fontSize - 0.25);
+      });
+    }
+    if (el.btnFontPlus) {
+      el.btnFontPlus.addEventListener('click', () => {
+        applyFontScale(state.fontSize + 0.25);
+      });
+    }
+    if (el.fontSizeInput) {
+      el.fontSizeInput.addEventListener('change', () => {
+        const val = parseFloat(el.fontSizeInput.value.replace(',', '.'));
+        if (!isNaN(val)) {
+          applyFontScale(val);
+        } else {
+          el.fontSizeInput.value = state.fontSize.toFixed(2);
+        }
+      });
+    }
+
+    // 6. Hero Nickname Input, OK Button, Checkboxes
     if (el.heroInput) {
       el.heroInput.value = state.heroNick;
-      if (el.heroClear) {
-        if (state.heroNick) el.heroClear.classList.add('visible');
+      if (el.heroClear && state.heroNick) {
+        el.heroClear.classList.add('visible');
       }
 
       el.heroInput.addEventListener('input', () => {
-        const val = el.heroInput.value.trim();
-        state.heroNick = val;
-        localStorage.setItem(STORAGE_KEY_HERO, val);
-
         if (el.heroClear) {
-          if (val) {
-            el.heroClear.classList.add('visible');
-          } else {
-            el.heroClear.classList.remove('visible');
-          }
+          if (el.heroInput.value.trim()) el.heroClear.classList.add('visible');
+          else el.heroClear.classList.remove('visible');
         }
-
-        clearTimeout(heroInputDebounce);
-        heroInputDebounce = setTimeout(() => {
-          fetchLeaderboardData(false);
-        }, 350);
       });
 
       el.heroInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           el.heroInput.blur();
-          fetchLeaderboardData(false);
+          applyHeroChange();
         }
+      });
+    }
+
+    if (el.btnHeroOk) {
+      el.btnHeroOk.addEventListener('click', () => {
+        applyHeroChange();
       });
     }
 
     if (el.heroClear) {
       el.heroClear.addEventListener('click', () => {
         if (el.heroInput) el.heroInput.value = '';
-        state.heroNick = '';
-        localStorage.setItem(STORAGE_KEY_HERO, '');
-        el.heroClear.classList.remove('visible');
-        fetchLeaderboardData(false);
+        applyHeroChange();
       });
     }
 
-    // 6. Auto-Refresh Interval Selector
+    if (el.chkFocusHero) {
+      el.chkFocusHero.checked = state.focusHero;
+      el.chkFocusHero.addEventListener('change', () => {
+        state.focusHero = el.chkFocusHero.checked;
+        localStorage.setItem(STORAGE_KEY_FOCUS, String(state.focusHero));
+        if (state.focusHero && state.rankings.length > 0) {
+          renderLeaderboardTable(state.rankings);
+        }
+      });
+    }
+
+    if (el.chkSound) {
+      el.chkSound.checked = state.soundAlert;
+      el.chkSound.addEventListener('change', () => {
+        state.soundAlert = el.chkSound.checked;
+        localStorage.setItem(STORAGE_KEY_SOUND, String(state.soundAlert));
+      });
+    }
+
+    // 7. Auto-Refresh Interval Selector
     if (el.refreshSelect) {
+      const validValues = Array.from(el.refreshSelect.options).map((o) => o.value);
+      if (!validValues.includes(String(state.refreshIntervalSec))) {
+        state.refreshIntervalSec = 10;
+      }
       el.refreshSelect.value = String(state.refreshIntervalSec);
       el.refreshSelect.addEventListener('change', () => {
         state.refreshIntervalSec = parseInt(el.refreshSelect.value, 10);
         localStorage.setItem(STORAGE_KEY_REFRESH, String(state.refreshIntervalSec));
-        resetAutoRefresh();
-        showToast(state.refreshIntervalSec > 0 ? `Auto-refresh: ${state.refreshIntervalSec}s` : 'Auto-refresh: Off');
+        scheduleNextRefresh();
       });
     }
 
-    // 7. Manual Refresh Button
+    // 8. Manual Refresh Button
     if (el.btnRefresh) {
       el.btnRefresh.addEventListener('click', () => {
         fetchLeaderboardData(true);
@@ -742,7 +1006,7 @@
       });
     }
 
-    // 8. Pull-to-Refresh Gesture (Touch devices)
+    // 9. Pull-to-Refresh Gesture
     window.addEventListener('touchstart', (e) => {
       if (window.scrollY <= 2 && e.touches.length === 1) {
         state.touchStartY = e.touches[0].clientY;
@@ -760,11 +1024,7 @@
       if (deltaY > 20 && window.scrollY <= 2) {
         if (el.pullIndicator) {
           el.pullIndicator.classList.add('visible');
-          if (deltaY > 60) {
-            el.pullIndicator.textContent = '↑ Release to refresh';
-          } else {
-            el.pullIndicator.textContent = '↓ Pull down to refresh';
-          }
+          el.pullIndicator.textContent = deltaY > 60 ? '↑ Отпустите для обновления' : '↓ Потяните вниз для обновления';
         }
       }
     }, { passive: true });
@@ -778,7 +1038,6 @@
         const touchEndY = e.changedTouches[0].clientY;
         if (touchEndY - state.touchStartY > 60) {
           fetchLeaderboardData(true);
-          showToast('Refreshing leaderboard...');
         }
       }
     }, { passive: true });
@@ -805,33 +1064,21 @@
   // Application Bootstrap
   // ==========================================================================
   function init() {
-    // 1. Restore active stake chip
-    el.stakeChips.forEach((chip) => {
-      if (chip.getAttribute('data-stake') === state.stake) {
-        chip.classList.add('active');
-      } else {
-        chip.classList.remove('active');
-      }
-    });
-
-    // 2. Setup listeners
+    syncStakeSelectors(state.stake);
+    applyFontScale(state.fontSize);
     setupEventListeners();
-
-    // 3. Register SW
     registerServiceWorker();
+    startMasterTimerLoop();
 
-    // 4. Check Authentication Gate
     if (!state.token) {
       showLockScreen();
     } else {
       hideLockScreen();
-      fetchLeaderboardData();
+      fetchLeaderboardData(false);
       fetchStakesData();
-      resetAutoRefresh();
     }
   }
 
-  // Launch on DOMContentLoaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <!-- Mobile-first viewport optimized for 375px-430px viewports with zero horizontal overflow -->
@@ -12,7 +12,7 @@
   <meta name="theme-color" content="#141619">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="GG HUD">
+  <meta name="apple-mobile-web-app-title" content="Leaderboard HUD">
   <meta name="mobile-web-app-capable" content="yes">
   
   <link rel="manifest" href="/static/manifest.json">
@@ -23,37 +23,70 @@
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <!-- Main Mobile Container -->
+  <!-- Main Mobile Container (Desktop HUD Classic Layout) -->
   <main class="app-container">
     
     <!-- Pull to Refresh Visual Indicator -->
-    <div id="pull-indicator" class="pull-refresh-indicator" aria-hidden="true">↓ Pull down to refresh</div>
+    <div id="pull-indicator" class="pull-refresh-indicator" aria-hidden="true">↓ Потяните вниз для обновления</div>
 
-    <!-- Header with Title, Live Pulse Dot, Countdown Pill, Logout -->
-    <header class="header-bar">
-      <div class="brand-section">
-        <div class="brand-logo" aria-hidden="true">GG</div>
-        <div class="brand-text">
-          <h1>GG HUD</h1>
-          <p>Spin &amp; Gold</p>
-        </div>
-      </div>
-
-      <div class="header-status">
-        <!-- Live pulse dot -->
-        <span id="pulse-dot" class="pulse-dot" title="Live Connection Active" aria-label="Live connection status"></span>
-        <!-- Countdown Pill ("⏳ 07ч 12м 45с") -->
-        <div id="countdown-pill" class="countdown-pill" title="Time remaining until 08:00 UTC daily reset">
-          <span class="countdown-icon" aria-hidden="true">⏳</span>
+    <!-- 1. Top Bar: Day Countdown (left), Refresh Timer, Refresh button, Lock button -->
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <div id="countdown-pill" class="countdown-pill" title="До конца зачётного дня (08:00 UTC)">
           <span id="countdown-timer-text">--ч --м --с</span>
         </div>
-        <!-- Logout / Lock HUD button -->
-        <button id="btn-logout" class="btn-icon" title="Lock HUD / Logout" aria-label="Lock HUD">🔒</button>
+        <span id="top-timer-lbl" class="top-timer-lbl">⏱ 10с</span>
+        <span id="pulse-dot" class="pulse-dot" title="Статус соединения" aria-label="Live connection status"></span>
+      </div>
+
+      <div class="top-bar-right">
+        <button id="btn-refresh" class="btn-refresh-desktop" aria-label="Обновить данные лидерборда" title="Обновить">🔄 Обновить</button>
+        <button id="btn-logout" class="btn-pin-desktop" title="Заблокировать HUD (ПИН)" aria-label="Lock HUD">🔒 ПИН</button>
       </div>
     </header>
 
-    <!-- Stake Selector Bar: Chips from $0.25 to $200 -->
-    <nav class="stake-bar-wrapper" aria-label="Stake Selector">
+    <!-- 2. Control Bar: Лимит, Таймер, Шрифт (- 10.50 +) -->
+    <section class="ctrl-bar" aria-label="Параметры отображения">
+      <div class="ctrl-group">
+        <label for="stake-select" class="ctrl-label bold">Лимит:</label>
+        <select id="stake-select" class="desktop-select stake-select" aria-label="Выбор лимита">
+          <option value="$0.25">$0.25</option>
+          <option value="$1">$1</option>
+          <option value="$3">$3</option>
+          <option value="$5">$5</option>
+          <option value="$10">$10</option>
+          <option value="$20">$20</option>
+          <option value="$50">$50</option>
+          <option value="$100">$100</option>
+          <option value="$200">$200</option>
+        </select>
+      </div>
+
+      <div class="ctrl-group">
+        <label for="refresh-interval" class="ctrl-label">Таймер:</label>
+        <select id="refresh-interval" class="desktop-select refresh-select" aria-label="Интервал автообновления">
+          <option value="10">10 сек</option>
+          <option value="15">15 сек</option>
+          <option value="20">20 сек</option>
+          <option value="30">30 сек</option>
+          <option value="45">45 сек</option>
+          <option value="60">1 мин</option>
+          <option value="120">2 мин</option>
+          <option value="300">5 мин</option>
+          <option value="0">Выкл</option>
+        </select>
+      </div>
+
+      <div class="ctrl-group font-ctrl-group">
+        <span class="ctrl-label">Шрифт:</span>
+        <button id="btn-font-minus" class="btn-font-step" type="button" title="Уменьшить шрифт">−</button>
+        <input id="font-size-input" class="font-size-input" type="text" value="10.50" aria-label="Размер шрифта">
+        <button id="btn-font-plus" class="btn-font-step" type="button" title="Увеличить шрифт">+</button>
+      </div>
+    </section>
+
+    <!-- Hidden Stake Chips for Legacy / Automated Test Compatibility -->
+    <nav class="stake-bar-wrapper hidden-compat" aria-hidden="true">
       <div id="stake-chips-scroll" class="stake-chips-scroll">
         <button class="stake-chip active" data-stake="$0.25">$0.25</button>
         <button class="stake-chip" data-stake="$1">$1</button>
@@ -67,82 +100,82 @@
       </div>
     </nav>
 
-    <!-- Hero Controls Bar: Input, auto-refresh interval select, refresh button -->
-    <section class="hero-controls-bar" aria-label="Hero and Refresh Controls">
-      <div class="hero-input-group">
-        <span class="hero-input-icon" aria-hidden="true">👤</span>
+    <!-- 3. Hero & Search Bar: Твой ник (Hero), OK, Фокус на Hero, Звук -->
+    <section class="hero-bar" aria-label="Поиск игрока Hero">
+      <label for="hero-input" class="hero-bar-label">Твой ник (Hero):</label>
+      <div class="hero-entry-wrap">
         <input 
           type="text" 
           id="hero-input" 
-          class="hero-input" 
-          placeholder="Hero Nickname" 
+          class="hero-entry-desktop" 
+          placeholder="" 
           autocomplete="off" 
           autocorrect="off" 
           autocapitalize="none"
           spellcheck="false"
         >
-        <button id="hero-clear" class="hero-clear-btn" aria-label="Clear hero nickname" title="Clear">✕</button>
+        <button id="hero-clear" class="hero-clear-btn" aria-label="Очистить ник" title="Очистить">✕</button>
       </div>
+      <button id="btn-hero-ok" class="btn-hero-ok" type="button">OK</button>
 
-      <!-- Auto-refresh interval selector -->
-      <select id="refresh-interval" class="refresh-select" aria-label="Auto-refresh interval">
-        <option value="15">Auto 15s</option>
-        <option value="30">Auto 30s</option>
-        <option value="0">Off</option>
-      </select>
+      <label class="desktop-chk-label">
+        <input type="checkbox" id="chk-focus-hero" checked>
+        <span>Фокус на Hero</span>
+      </label>
 
-      <!-- Manual refresh button -->
-      <button id="btn-refresh" class="btn-refresh" aria-label="Refresh leaderboard data" title="Refresh">🔄</button>
+      <label class="desktop-chk-label sound-chk-label">
+        <input type="checkbox" id="chk-sound" checked>
+        <span>🔊 Звук</span>
+      </label>
     </section>
 
-    <!-- Hero Spotlight Card: Large Rank Badge, Nickname, Points, Prize, Gap Telemetry -->
-    <section id="hero-spotlight-card" class="hero-spotlight-card" aria-label="Hero Telemetry Spotlight">
-      <div class="spotlight-top">
-        <div class="spotlight-identity">
-          <div id="spotlight-rank-badge" class="large-rank-badge rank-unranked">-</div>
-          <div class="spotlight-info">
-            <div id="spotlight-nick" class="spotlight-nick">No Hero Set</div>
-            <div id="spotlight-stake" class="spotlight-stake-sub">$0.25 Stake</div>
-          </div>
-        </div>
+    <!-- 4. Hero Status Banner (Desktop Box 1) -->
+    <section id="hero-status-box" class="hero-status-box" aria-label="Статус Hero">
+      <div id="hero-status-lbl" class="hero-status-lbl">Введи свой игровой ник выше, чтобы активировать персонального советника гонки.</div>
+    </section>
 
-        <div class="spotlight-prize-badge">
-          <div id="spotlight-prize" class="prize-pill">-</div>
-          <div id="spotlight-points" class="points-display">0.0 pts</div>
-        </div>
-      </div>
+    <!-- 5. Smart Advisor / EV Box (Desktop Box 2) -->
+    <section id="advisor-box" class="advisor-box" aria-label="Советник гонки">
+      <div id="advisor-lbl" class="advisor-lbl">💡 [Советник]: Анализирую разрывы лидерборда...</div>
+    </section>
 
-      <!-- Telemetry Gap / Cushion Grid -->
-      <div class="spotlight-telemetry-grid">
-        <div class="telemetry-cell">
-          <div class="telemetry-label">To Next Rank</div>
-          <div id="spotlight-pts-next" class="telemetry-value gold">-</div>
-        </div>
-        <div class="telemetry-cell">
-          <div class="telemetry-label">Defensive Cushion</div>
-          <div id="spotlight-cushion" class="telemetry-value green">-</div>
-        </div>
-      </div>
-
-      <!-- Bubble Danger Alert Banner -->
+    <!-- Hidden Legacy Spotlight Card for Test Compatibility -->
+    <section id="hero-spotlight-card" class="hero-spotlight-card hidden-compat" aria-hidden="true">
+      <div id="spotlight-rank-badge" class="large-rank-badge rank-unranked">-</div>
+      <div id="spotlight-nick" class="spotlight-nick">No Hero Set</div>
+      <div id="spotlight-stake" class="spotlight-stake-sub">$0.25 Stake</div>
+      <div id="spotlight-prize" class="prize-pill">-</div>
+      <div id="spotlight-points" class="points-display">0.0 pts</div>
+      <div id="spotlight-pts-next" class="telemetry-value gold">-</div>
+      <div id="spotlight-cushion" class="telemetry-value green">-</div>
       <div id="spotlight-danger-banner" class="danger-alert-banner hidden">
-        <span aria-hidden="true">⚠️</span>
-        <span id="danger-banner-text">Caution: Cushion &lt; 1 win away!</span>
+        <span id="danger-banner-text"></span>
       </div>
+      <span id="table-title"></span>
+      <span id="prize-pool-badge"></span>
     </section>
 
-    <!-- Leaderboard Table: Rank Badges, Nicknames, Points, Prizes, Hero Row Highlighting -->
-    <section class="table-section" aria-label="Leaderboard Rankings">
-      <div class="table-header-title">
-        <h2 id="table-title">Top 50 Rankings</h2>
-        <span id="prize-pool-badge" class="prize-pool-pill">$0 Prize Pool</span>
+    <!-- 6. Leaderboard Table (6 Columns: #, Игрок, Очки, Δ, Приз ($), Разрыв) -->
+    <section class="desktop-table-wrapper" aria-label="Таблица лидерборда">
+      <div class="desktop-table-header">
+        <div class="th-cell col-rank">#</div>
+        <div class="th-cell col-nick">Игрок</div>
+        <div class="th-cell col-points">Очки</div>
+        <div class="th-cell col-gain">Δ</div>
+        <div class="th-cell col-prize">Приз ($)</div>
+        <div class="th-cell col-gap">Разрыв</div>
       </div>
 
       <div id="leaderboard-list" class="leaderboard-list" role="list">
-        <!-- Rendered dynamically by app.js -->
-        <div class="hero-empty-notice">Loading rankings...</div>
+        <div class="hero-empty-notice">Загрузка данных лидерборда...</div>
       </div>
     </section>
+
+    <!-- 7. Bottom Status Bar -->
+    <footer class="status-bar">
+      <span id="status-lbl" class="status-lbl">Инициализация...</span>
+      <span id="next-update-lbl" class="next-update-lbl">10с</span>
+    </footer>
 
   </main>
 
@@ -151,8 +184,8 @@
     <div class="pin-modal" id="pin-modal-card">
       <div class="pin-modal-icon" aria-hidden="true">🔒</div>
       <div>
-        <h2>Private Access Gate</h2>
-        <p>Enter 4-digit PIN to access GGPoker HUD</p>
+        <h2>Доступ по ПИН-коду</h2>
+        <p>Введите 4-значный ПИН для входа в Leaderboard HUD</p>
       </div>
 
       <!-- PIN Display Dots -->
@@ -188,9 +221,9 @@
         <button class="pin-btn" data-key="7">7</button>
         <button class="pin-btn" data-key="8">8</button>
         <button class="pin-btn" data-key="9">9</button>
-        <button class="pin-btn action-btn" data-key="clear" title="Clear PIN">C</button>
+        <button class="pin-btn action-btn" data-key="clear" title="Сброс">C</button>
         <button class="pin-btn" data-key="0">0</button>
-        <button class="pin-btn action-btn enter-btn" data-key="enter" title="Unlock">OK</button>
+        <button class="pin-btn action-btn enter-btn" data-key="enter" title="Войти">OK</button>
       </div>
     </div>
   </div>

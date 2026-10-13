@@ -1,7 +1,7 @@
 // GGPoker Mobile Leaderboard HUD Service Worker
 // Cache-First for static assets, Network-Only for /api/*
 
-const CACHE_NAME = 'gg-hud-v1.0.0';
+const CACHE_NAME = 'gg-hud-v2.0.0';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
